@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>宇宙の消えた3つの手がかり</title>
+  <!-- Tailwind CSS (スタイリング用) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* カードの視覚アニメーション */
+    .card-btn {
+      transition: all 0.2s ease-in-out;
+    }
+    .card-btn:active {
+      transform: scale(0.95);
+    }
+    /* ミスした時の揺れ効果 */
+    .shake {
+      animation: shake 0.4s ease-in-out;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 font-sans select-none">
+
+  <!-- ヘッダーエリア -->
+  <header class="w-full max-w-md text-center mt-2">
+    <h1 class="text-2xl font-bold tracking-wider text-indigo-400 mb-1">
+      ✨ 宇宙の消えた3つの手がかり ✨
+    </h1>
+    <p class="text-xs text-slate-400">隠れた3つの宇宙アイテムの位置を記憶して当てよう！</p>
+  </header>
+
+  <!-- ゲーム情報・ステータス表示 -->
+  <main class="w-full max-w-md flex flex-col items-center gap-4 my-auto">
+    
+    <!-- ダッシュボード（制限時間・発見数・記憶時間） -->
+    <div class="w-full grid grid-cols-3 gap-2 bg-slate-900 border border-slate-800 p-3 rounded-xl text-center shadow-lg">
+      <div class="flex flex-col items-center">
+        <span class="text-xs text-slate-400">残り時間</span>
+        <span id="timer-display" class="text-xl font-black text-amber-400">15s</span>
+      </div>
+      <div class="flex flex-col items-center border-x border-slate-800">
+        <span class="text-xs text-slate-400">手がかり</span>
+        <span id="score-display" class="text-xl font-black text-emerald-400">0 / 3</span>
+      </div>
+      <div class="flex flex-col items-center">
+        <span class="text-xs text-slate-400">記憶時間</span>
+        <span id="peek-display" class="text-xl font-black text-cyan-400">2.0s</span>
+      </div>
+    </div>
+
+    <!-- 状況指示メッセージ -->
+    <div id="message-box" class="w-full text-center py-2 px-4 rounded-lg bg-indigo-950/60 border border-indigo-800/50 text-indigo-200 text-sm font-medium min-h-[42px] flex items-center justify-center">
+      「スタート」を押すとゲームが始まります！
+    </div>
+
+    <!-- 3x3 カードゲーム盤面 -->
+    <div id="board" class="w-full aspect-square grid grid-cols-3 gap-3 p-1">
+      <!-- JavaScriptで9個のボタン（カード）を動的生成します -->
+    </div>
+
+    <!-- 操作ボタンエリア -->
+    <div class="w-full flex justify-center gap-3">
+      <button id="start-btn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 font-bold rounded-xl shadow-lg shadow-indigo-900/40 text-white transition-all text-base">
+        🚀 ゲームスタート
+      </button>
+    </div>
+
+  </main>
+
+  <!-- フッター・操作説明 -->
+  <footer class="w-full max-w-md text-center text-xs text-slate-400 bg-slate-900/80 border border-slate-800 p-3 rounded-xl mb-2">
+    <p class="font-semibold text-slate-300 mb-1">【操作方法】</p>
+    <p>・画面上のカードを直接<span class="text-cyan-300">タップ</span></p>
+    <p>・またはキーボードの<span class="text-cyan-300"> [1] 〜 [9] キー</span> を押す</p>
+    <p class="mt-1 text-[10px] text-slate-500">※色だけでなくアイコンと文字で識別できます</p>
+  </footer>
+
+  <!-- JavaScript ロジック -->
+  <script>
+    // --- 定数と変数の宣言 ---
+    const TOTAL_TIME = 15; // 制限時間 15秒
+    const PEEK_DURATIONS = [2.0, 1.3, 0.7]; // 正解数に応じて短くなる記憶時間（秒）
+    
+    // 3つの手がかり定義（色・アイコン・文字を併用）
+    const TARGET_ITEMS = [
+      { id: 'target_1', icon: '🚀', label: 'ロケット', colorClass: 'bg-indigo-600 border-indigo-400 text-white' },
+      { id: 'target_2', icon: '🪐', label: 'わくせい', colorClass: 'bg-purple-600 border-purple-400 text-white' },
+      { id: 'target_3', icon: '👾', label: 'エイリアン', colorClass: 'bg-teal-600 border-teal-400 text-white' }
+    ];
+
+    // ゲームの状態変数
+    let gameState = 'IDLE'; // 'IDLE' | 'PEEKING' | 'PLAYING' | 'GAMEOVER' | 'CLEAR'
+    let remainingTime = TOTAL_TIME;
+    let foundCount = 0;
+    let gridData = []; // 9マスの情報
+    let mainTimerId = null;
+    let peekTimerId = null;
+    let peekCountdownId = null;
+    let peekTimeLeft = 0;
+
+    // DOM要素の参照取得
+    const boardEl = document.getElementById('board');
+    const timerDisplayEl = document.getElementById('timer-display');
+    const scoreDisplayEl = document.getElementById('score-display');
+    const peekDisplayEl = document.getElementById('peek-display');
+    const messageBoxEl = document.getElementById('message-box');
+    const startBtnEl = document.getElementById('start-btn');
+
+    // --- 初期化処理 ---
+    function initBoardUI() {
+      boardEl.innerHTML = '';
+      for (let i = 0; i < 9; i++) {
+        const btn = document.createElement('button');
+        btn.id = `card-${i}`;
+        btn.className = 'card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 border-slate-700 bg-slate-800 text-slate-400 font-bold text-sm shadow-md disabled:cursor-not-allowed';
+        btn.disabled = true;
+        
+        // キーボード操作用の番号ガイド表示 (1~9)
+        const keyHint = document.createElement('span');
+        keyHint.className = 'absolute top-1 left-2 text-[10px] text-slate-500 font-mono';
+        keyHint.innerText = `[${i + 1}]`;
+        btn.appendChild(keyHint);
+
+        // カードのコンテンツ容器
+        const contentContainer = document.createElement('div');
+        contentContainer.id = `card-content-${i}`;
+        contentContainer.className = 'flex flex-col items-center gap-1';
+        contentContainer.innerHTML = `<span class="text-2xl">❓</span><span class="text-xs">ひみつ</span>`;
+        btn.appendChild(contentContainer);
+
+        // クリック/タップ イベント
+        btn.addEventListener('click', () => handleCardSelect(i));
+        boardEl.appendChild(btn);
+      }
+    }
+
+    // --- ゲームの開始・リセット ---
+    function startGame() {
+      // 状態のリセット
+      clearInterval(mainTimerId);
+      clearTimeout(peekTimerId);
+      clearInterval(peekCountdownId);
+
+      gameState = 'PEEKING';
+      remainingTime = TOTAL_TIME;
+      foundCount = 0;
+
+      // 9マスの中に3つの手がかりをランダム配置
+      setupGridData();
+
+      // UI表示の更新
+      updateDashboardUI();
+      startBtnEl.innerText = '🔄 やり直す';
+      startBtnEl.className = 'w-full py-3 bg-slate-700 hover:bg-slate-600 font-bold rounded-xl text-slate-200 text-base';
+
+      // 30秒全体タイマーの開始
+      mainTimerId = setInterval(() => {
+        remainingTime--;
+        timerDisplayEl.innerText = `${remainingTime}s`;
+        if (remainingTime <= 0) {
+          endGame(false); // 時間切れで失敗
+        }
+      }, 1000);
+
+      // 第1段階の「記憶タイム（4秒）」開始
+      startPeekPhase();
+    }
+
+    // マスデータのランダム配置作成
+    function setupGridData() {
+      gridData = Array(9).fill(null).map(() => ({ isTarget: false, found: false, targetInfo: null }));
+      
+      // 0〜8から3つの異なるインデックスを選択
+      const indices = [];
+      while (indices.length < 3) {
+        const rand = Math.floor(Math.random() * 9);
+        if (!indices.includes(rand)) indices.push(rand);
+      }
+
+      // 手がかりアイテムを割り当て
+      indices.forEach((gridIndex, itemIndex) => {
+        gridData[gridIndex] = {
+          isTarget: true,
+          found: false,
+          targetInfo: TARGET_ITEMS[itemIndex]
+        };
+      });
+    }
+
+    // --- 記憶フェーズ（チラ見せ）の制御 ---
+    function startPeekPhase() {
+      gameState = 'PEEKING';
+      disableAllCards(true);
+
+      const currentPeekDuration = PEEK_DURATIONS[foundCount];
+      peekDisplayEl.innerText = `${currentPeekDuration.toFixed(1)}s`;
+      peekTimeLeft = currentPeekDuration;
+
+      // メッセージ更新
+      messageBoxEl.innerHTML = `👀 覚える時間！ 手がかりの位置を覚えてね！（<span id="peek-time-counter">${peekTimeLeft.toFixed(1)}</span>s）`;
+      messageBoxEl.className = 'w-full text-center py-2 px-4 rounded-lg bg-amber-950/80 border border-amber-600 text-amber-200 text-sm font-bold animate-pulse';
+
+      // 未発見の手がかりを全表表示
+      for (let i = 0; i < 9; i++) {
+        const cardBtn = document.getElementById(`card-${i}`);
+        const content = document.getElementById(`card-content-${i}`);
+        
+        if (gridData[i].isTarget && !gridData[i].found) {
+          // 正解アイテムの表示
+          const item = gridData[i].targetInfo;
+          cardBtn.className = `card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 ${item.colorClass} shadow-lg scale-105`;
+          content.innerHTML = `<span class="text-3xl">${item.icon}</span><span class="text-xs font-bold">${item.label}</span>`;
+        } else if (gridData[i].found) {
+          // すでに発見済みのアイテム
+          const item = gridData[i].targetInfo;
+          cardBtn.className = 'card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 border-slate-600 bg-slate-800 text-slate-400 opacity-60';
+          content.innerHTML = `<span class="text-2xl">${item.icon}</span><span class="text-xs">発見済</span>`;
+        } else {
+          // ハズレマス（隠したまま）
+          cardBtn.className = 'card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 border-slate-800 bg-slate-900 text-slate-600';
+          content.innerHTML = `<span class="text-2xl">❓</span><span class="text-xs">ひみつ</span>`;
+        }
+      }
+
+      // 記憶時間のカウントダウン表示
+      peekCountdownId = setInterval(() => {
+        peekTimeLeft -= 0.1;
+        const counterEl = document.getElementById('peek-time-counter');
+        if (counterEl && peekTimeLeft > 0) {
+          counterEl.innerText = peekTimeLeft.toFixed(1);
+        }
+      }, 100);
+
+      // 規定時間後に裏返して選択フェーズへ移行
+      peekTimerId = setTimeout(() => {
+        clearInterval(peekCountdownId);
+        hideUnfoundCards();
+        startPlayPhase();
+      }, currentPeekDuration * 1000);
+    }
+
+    // 未発見のカードを裏返す
+    function hideUnfoundCards() {
+      for (let i = 0; i < 9; i++) {
+        if (!gridData[i].found) {
+          const cardBtn = document.getElementById(`card-${i}`);
+          const content = document.getElementById(`card-content-${i}`);
+          cardBtn.className = 'card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-400 hover:bg-slate-750 shadow-md';
+          content.innerHTML = `<span class="text-2xl">❓</span><span class="text-xs">ひみつ</span>`;
+        }
+      }
+    }
+
+    // --- 選択フェーズの開始 ---
+    function startPlayPhase() {
+      gameState = 'PLAYING';
+      messageBoxEl.innerText = '🔍 手がかりがある場所を選んでタップ！';
+      messageBoxEl.className = 'w-full text-center py-2 px-4 rounded-lg bg-indigo-950/60 border border-indigo-800/50 text-indigo-200 text-sm font-medium';
+      
+      // 未発見カードの操作許可
+      for (let i = 0; i < 9; i++) {
+        const cardBtn = document.getElementById(`card-${i}`);
+        if (!gridData[i].found) {
+          cardBtn.disabled = false;
+        }
+      }
+    }
+
+    // --- カード選択時の処理（成功・失敗の判定） ---
+    function handleCardSelect(index) {
+      if (gameState !== 'PLAYING' || gridData[index].found) return;
+
+      const cardBtn = document.getElementById(`card-${index}`);
+      const content = document.getElementById(`card-content-${index}`);
+
+      if (gridData[index].isTarget) {
+        // === 【正解】の場合 ===
+        gridData[index].found = true;
+        foundCount++;
+        updateDashboardUI();
+
+        const item = gridData[index].targetInfo;
+        cardBtn.className = `card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 ${item.colorClass} shadow-lg ring-4 ring-emerald-400/50`;
+        content.innerHTML = `<span class="text-3xl">${item.icon}</span><span class="text-xs font-bold">${item.label}</span>`;
+        cardBtn.disabled = true;
+
+        if (foundCount === 3) {
+          // 3つ全て発見したらクリア！
+          endGame(true);
+        } else {
+          // まだ残っている場合：次の記憶タイム開始（プレビュー時間が短くなる）
+          disableAllCards(true);
+          messageBoxEl.innerText = `🎯 正解！ 残りの手がかりをもう一度見せるよ！`;
+          messageBoxEl.className = 'w-full text-center py-2 px-4 rounded-lg bg-emerald-950 border border-emerald-600 text-emerald-200 text-sm font-bold';
+          setTimeout(() => {
+            startPeekPhase();
+          }, 800);
+        }
+
+      } else {
+        // === 【不正解】の場合 ===
+        disableAllCards(true);
+        cardBtn.classList.add('shake');
+
+        // ハズレの表示
+        cardBtn.className = 'card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 border-rose-600 bg-rose-950 text-rose-300 shake';
+        content.innerHTML = `<span class="text-2xl">❌</span><span class="text-xs font-bold">から</span>`;
+
+        messageBoxEl.innerText = '❌ ちがうよ！ 一瞬答えを見せるから覚え直そう！';
+        messageBoxEl.className = 'w-full text-center py-2 px-4 rounded-lg bg-rose-950 border border-rose-600 text-rose-200 text-sm font-bold';
+
+        // 失敗時ルール：答えを一瞬（1.0秒）見せて、選び直せる
+        setTimeout(() => {
+          showFlashAnswerThenResume(index);
+        }, 500);
+      }
+    }
+
+    // 間違えた時に答えを一瞬見せて再開する
+    function showFlashAnswerThenResume(missedIndex) {
+      // 未発見の手がかりを表示
+      for (let i = 0; i < 9; i++) {
+        if (gridData[i].isTarget && !gridData[i].found) {
+          const btn = document.getElementById(`card-${i}`);
+          const cnt = document.getElementById(`card-content-${i}`);
+          const item = gridData[i].targetInfo;
+          btn.className = `card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 ${item.colorClass} opacity-90`;
+          cnt.innerHTML = `<span class="text-2xl">${item.icon}</span><span class="text-xs font-bold">${item.label}</span>`;
+        }
+      }
+
+      // 1.0秒後に隠してプレイ再開
+      setTimeout(() => {
+        if (gameState === 'PLAYING') {
+          // 間違えたマスを元に戻す
+          const missBtn = document.getElementById(`card-${missedIndex}`);
+          missBtn.classList.remove('shake');
+          
+          hideUnfoundCards();
+          startPlayPhase();
+        }
+      }, 1000);
+    }
+
+    // --- 全カードの有効/無効化 ---
+    function disableAllCards(disabled) {
+      for (let i = 0; i < 9; i++) {
+        const cardBtn = document.getElementById(`card-${i}`);
+        cardBtn.disabled = disabled;
+      }
+    }
+
+    // --- ダッシュボード更新 ---
+    function updateDashboardUI() {
+      timerDisplayEl.innerText = `${remainingTime}s`;
+      scoreDisplayEl.innerText = `${foundCount} / 3`;
+      const nextPeek = PEEK_DURATIONS[foundCount] || PEEK_DURATIONS[PEEK_DURATIONS.length - 1];
+      peekDisplayEl.innerText = `${nextPeek.toFixed(1)}s`;
+    }
+
+    // --- ゲーム終了（勝利・失敗） ---
+    function endGame(isWin) {
+      gameState = isWin ? 'CLEAR' : 'GAMEOVER';
+      clearInterval(mainTimerId);
+      clearTimeout(peekTimerId);
+      clearInterval(peekCountdownId);
+      disableAllCards(true);
+
+      if (isWin) {
+        messageBoxEl.innerHTML = `🎉 <span class="text-amber-300 font-bold">ミッション成功！</span> 3つの手がかりを全部見つけた！`;
+        messageBoxEl.className = 'w-full text-center py-3 px-4 rounded-lg bg-emerald-900 border-2 border-emerald-400 text-emerald-100 text-base font-bold animate-bounce';
+      } else {
+        messageBoxEl.innerHTML = `💀 <span class="text-rose-300 font-bold">時間切れ！</span> 15秒以内に見つけられなかった…`;
+        messageBoxEl.className = 'w-full text-center py-3 px-4 rounded-lg bg-rose-950 border-2 border-rose-500 text-rose-100 text-base font-bold';
+        
+        // 残りの答えを明かす
+        for (let i = 0; i < 9; i++) {
+          if (gridData[i].isTarget && !gridData[i].found) {
+            const btn = document.getElementById(`card-${i}`);
+            const cnt = document.getElementById(`card-content-${i}`);
+            const item = gridData[i].targetInfo;
+            btn.className = `card-btn relative flex flex-col items-center justify-center rounded-2xl border-2 ${item.colorClass} opacity-80`;
+            cnt.innerHTML = `<span class="text-2xl">${item.icon}</span><span class="text-xs font-bold">${item.label}</span>`;
+          }
+        }
+      }
+
+      startBtnEl.innerText = '🔄 もう一度遊ぶ';
+      startBtnEl.className = 'w-full py-3 bg-emerald-600 hover:bg-emerald-500 font-bold rounded-xl text-white text-base shadow-lg shadow-emerald-900/40';
+    }
+
+    // --- キーボード操作の対応 (数字キー 1〜9) ---
+    window.addEventListener('keydown', (e) => {
+      // 1〜9 キーが押された場合
+      if (e.key >= '1' && e.key <= '9') {
+        const index = parseInt(e.key, 10) - 1;
+        if (gameState === 'PLAYING') {
+          handleCardSelect(index);
+        }
+      }
+      // Enter キーでスタート/再挑戦
+      if (e.key === 'Enter') {
+        startGame();
+      }
+    });
+
+    // --- イベントリスナーの登録 ---
+    startBtnEl.addEventListener('click', startGame);
+
+    // 起動時の初期化
+    window.onload = () => {
+      initBoardUI();
+    };
+  </script>
+</body>
+</html>
