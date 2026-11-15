@@ -95,13 +95,14 @@
     ];
 
     // ゲームの状態変数
-    let gameState = 'IDLE'; // 'IDLE' | 'PEEKING' | 'PLAYING' | 'GAMEOVER' | 'CLEAR'
+    let gameState = 'IDLE'; // 'IDLE' | 'PEEKING' | 'PLAYING' | 'REVEALING' | 'GAMEOVER' | 'CLEAR'
     let remainingTime = TOTAL_TIME;
     let foundCount = 0;
     let gridData = []; // 9マスの情報
     let mainTimerId = null;
     let peekTimerId = null;
     let peekCountdownId = null;
+    let revealTimerId = null;
     let peekTimeLeft = 0;
 
     // DOM要素の参照取得
@@ -146,6 +147,7 @@
       clearInterval(mainTimerId);
       clearTimeout(peekTimerId);
       clearInterval(peekCountdownId);
+      clearTimeout(revealTimerId);
 
       gameState = 'PEEKING';
       remainingTime = TOTAL_TIME;
@@ -275,6 +277,7 @@
     // --- カード選択時の処理（成功・失敗の判定） ---
     function handleCardSelect(index) {
       if (gameState !== 'PLAYING' || gridData[index].found) return;
+      gameState = 'REVEALING';
 
       const cardBtn = document.getElementById(`card-${index}`);
       const content = document.getElementById(`card-content-${index}`);
@@ -298,7 +301,7 @@
           disableAllCards(true);
           messageBoxEl.innerText = `🎯 正解！ 残りの手がかりをもう一度見せるよ！`;
           messageBoxEl.className = 'w-full text-center py-2 px-4 rounded-lg bg-emerald-950 border border-emerald-600 text-emerald-200 text-sm font-bold';
-          setTimeout(() => {
+          revealTimerId = setTimeout(() => {
             startPeekPhase();
           }, 800);
         }
@@ -316,7 +319,7 @@
         messageBoxEl.className = 'w-full text-center py-2 px-4 rounded-lg bg-rose-950 border border-rose-600 text-rose-200 text-sm font-bold';
 
         // 失敗時ルール：答えを一瞬（1.0秒）見せて、選び直せる
-        setTimeout(() => {
+        revealTimerId = setTimeout(() => {
           showFlashAnswerThenResume(index);
         }, 500);
       }
@@ -336,8 +339,8 @@
       }
 
       // 1.0秒後に隠してプレイ再開
-      setTimeout(() => {
-        if (gameState === 'PLAYING') {
+      revealTimerId = setTimeout(() => {
+        if (gameState === 'REVEALING') {
           // 間違えたマスを元に戻す
           const missBtn = document.getElementById(`card-${missedIndex}`);
           missBtn.classList.remove('shake');
@@ -370,6 +373,7 @@
       clearInterval(mainTimerId);
       clearTimeout(peekTimerId);
       clearInterval(peekCountdownId);
+      clearTimeout(revealTimerId);
       disableAllCards(true);
 
       if (isWin) {
